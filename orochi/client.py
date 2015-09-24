@@ -7,6 +7,7 @@ import cmd
 import stat
 import json
 import signal
+import readline
 from string import Template
 from getpass import getpass
 
@@ -16,7 +17,7 @@ from requests import HTTPError, ConnectionError
 from .api import EightTracksAPI, APIError
 from .player import MPlayer
 from .errors import InitializationError, TerminatedError
-from .colors import bold
+from .colors import bold, title
 
 
 # Tuple containing prefix, main text and suffix for command line prompt
@@ -53,10 +54,12 @@ class ConfigFile(object):
     each write."""
 
     DEFAULT_CONFIG_KEYS = ['mplayer_extra_arguments', 'username', 'password',
-                           'autologin', 'results_per_page', 'results_sorting']
+                           'autologin', 'results_per_page', 'results_sorting',
+                           'terminal_title']
     DEFAULTS = {
         'results_per_page': 10,
         'results_sorting': 'hot',
+        'terminal_title': 'no',
     }
 
     def __init__(self, filename=None):
@@ -147,6 +150,15 @@ class Client(CmdExitMixin, cmd.Cmd, object):
         self.total_pages = None
         self.query_type = None
 
+        # Readline history is saved to the same dir as config
+        self.history_filename = os.path.join(
+                os.path.dirname(self.config.filename),
+                "cmdhist")
+        try:
+            readline.read_history_file(self.history_filename)
+        except IOError:
+            pass  # Let it fail silently if there's no history
+
         # Set some config defaults
         if self.config['results_per_page']:
             self._results_per_page = self.config['results_per_page']
@@ -163,6 +175,13 @@ class Client(CmdExitMixin, cmd.Cmd, object):
         if self.config['username'] and self.config['password'] and self.config['autologin']:
             self.do_login(self.config['username'], password=self.config['password'])
         return super(Client, self).preloop()
+
+    def postloop(self):
+        # Try to save readline history
+        try:
+            readline.write_history_file(self.history_filename)
+        except IOError:
+            pass  # Let it fail silently e.g. if no write perms
 
     def precmd(self, line):
         self.lastline_is_empty = False
@@ -294,11 +313,16 @@ class Client(CmdExitMixin, cmd.Cmd, object):
                 self.config['username'] = ''
             else:
                 self.help_set_autologin()
+        elif setting == 'title':
+            if param in ('yes', 'no'):
+                self.config['terminal_title'] = param
+            else:
+                self.help_set_title()
 
     def help_set(self):
         print('Syntax: set <setting> <param>')
         print('Configure settings.')
-        print('Settings available: sorting, results_per_page, autologin.')
+        print('Settings available: sorting, results_per_page, autologin, title.')
         print('To get help for each setting, press enter with no <param>.')
 
     def help_set_sorting(self):
@@ -318,6 +342,10 @@ class Client(CmdExitMixin, cmd.Cmd, object):
         print('Toggle autologin on start (no by default).')
         print('WARNING: password will be saved in plain text.')
         print('When toggled off, password and username are deleted from config.')
+
+    def help_set_title(self):
+        print('Syntax: set title yes|no')
+        print('Toggle setting terminal title to song status (no by default).')
 
     def do_play(self, s):
         # The logic could be simplified here, and not have to re-catch all the exceptions
@@ -481,6 +509,14 @@ class PlayCommand(cmd.Cmd, object):
 
         super(PlayCommand, self).__init__(*args, **kwargs)
 
+        # Check default configs
+        self.config = config
+        if self.config['terminal_title']:
+            self._terminal_title = self.config['terminal_title']
+        else:
+            default_value = ConfigFile.DEFAULTS.get('terminal_title')
+            self.config['terminal_title'] = self._terminal_title = default_value
+
         # Initialize mplayer
         self.p = MPlayer(extra_arguments=config['mplayer_extra_arguments'])
 
@@ -616,7 +652,12 @@ class PlayCommand(cmd.Cmd, object):
             parts.append('from the album {}'.format(bold(track['release_name'].strip())))
         if track['year']:
             parts.append('({0[year]})'.format(track))
-        print(' '.join(parts) + '.')
+        status = ' '.join(parts) + '.'
+        if self._terminal_title == 'yes':
+            status += title('Now playing {name} by {performer}'.format(
+                name=track['name'].strip(),
+                performer=track['performer'].strip()))
+        print(status)
 
     def help_status(self):
         print('Show the status of the currently playing song.')
