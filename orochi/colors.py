@@ -19,6 +19,6 @@ ANSI_WINDOW_NAME_END = '\007'
 def bold(text):
     return ''.join([ANSI_BOLD, text, ANSI_NORMAL])
 
+
 def title(text):
     return ''.join([ANSI_WINDOW_NAME_START, text, ANSI_WINDOW_NAME_END])
-
