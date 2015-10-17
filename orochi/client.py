@@ -59,7 +59,7 @@ class ConfigFile(object):
     DEFAULTS = {
         'results_per_page': 10,
         'results_sorting': 'hot',
-        'terminal_title': 'no',
+        'terminal_title': 'yes',
     }
 
     def __init__(self, filename=None):
